@@ -26,12 +26,27 @@ async function ensureCreatorPage() {
 export async function myVideos({ limit = 20 } = {}) {
   const page = await ensureCreatorPage();
   await openAndWait(page, URLs.creatorManage, {
-    ready: ['table', '[role="row"]'],
-    textAny: ['作品', '播放'],
+    ready: [],
+    textAny: ['内容管理', '作品'],
     timeout: 40_000,
   });
   await assertNotBlocked(page, 'stats-manage');
-  await sleep(1500);
+  // 作品管理是异步加载的：等"加载中…"消失并且真的出现行
+  const { sleep: wait } = await import('../util.js');
+  const deadline = Date.now() + 45_000;
+  while (Date.now() < deadline) {
+    const done = await page
+      .evaluate(() => {
+        const text = document.body?.innerText || '';
+        if (/加载中/.test(text)) return false;
+        const rows = document.querySelectorAll('table tbody tr, [role="row"], [class*="table-row"]');
+        return rows.length >= 2;
+      })
+      .catch(() => false);
+    if (done) break;
+    await wait(1000);
+  }
+  await sleep(1200);
 
   const table = await scrapeTable(page);
   const rows = table.rows.slice(0, limit).map((cells) => {

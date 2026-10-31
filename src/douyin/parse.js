@@ -67,6 +67,14 @@ export async function locate(input) {
   const text = String(input ?? '').trim();
   if (!text) throw new Error('没有给出链接或 ID');
 
+  // "我的主页"：/user/self 没有 sec_uid，用浏览器跑一趟换出来
+  if (/douyin\.com\/user\/self/.test(text)) {
+    const { discoverSelfSecUid } = await import('../creator/login.js');
+    const secUid = await discoverSelfSecUid();
+    if (secUid) return { kind: 'user', secUid, url: text };
+    throw new Error('没能识别出当前登录账号的 sec_uid（可能未登录）');
+  }
+
   // 已经是一个明确的 URL
   if (/^https?:\/\//.test(text)) {
     const direct = parseTargetFromUrl(text);

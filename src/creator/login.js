@@ -11,7 +11,7 @@ import { sleep } from '../util.js';
 import { getContext, shot } from '../browser/manager.js';
 import { detectBlock, BrowserBlockedError, visibleText } from '../browser/pagekit.js';
 import { apiGet } from '../douyin/client.js';
-import { EP, baseParams } from '../douyin/params.js';
+import { EP, P, baseParams } from '../douyin/params.js';
 import { normalizeUser } from '../douyin/normalize.js';
 
 const log = logger('login');
@@ -51,10 +51,49 @@ export async function getLoginState({ withProfile = true } = {}) {
 
 /** 通过 www 的会话接口拿"我是谁" */
 export async function fetchSelf() {
-  const payload = await apiGet(EP.queryUser, baseParams(), { allowCodes: [8, 2154], label: 'queryUser' });
-  const user = payload.user || payload.user_info || payload.data?.user;
-  if (!user) throw new Error('接口没有返回登录用户信息（登录态可能不完整，重新扫码一次）');
-  return normalizeUser(user);
+  // 1) query/user 只告诉我们"这是谁"，返回体里的 uid 在顶层 user_uid
+  const session = await apiGet(EP.queryUser, baseParams(), { allowCodes: [8, 2154], label: 'queryUser' });
+  const uid = session.user_uid || session.user?.uid;
+  if (session.user) return normalizeUser(session.user);
+  if (!uid) throw new Error('会话接口没有返回 user_uid（登录态可能不完整）');
+
+  // 2) 拿 uid 换完整资料
+  try {
+    const payload = await apiGet(EP.selfProfile, { ...baseParams(), uid: String(uid) }, { allowCodes: [8, 2], label: 'selfProfile' });
+    const user = payload.user || payload.user_info || payload.data?.user;
+    if (user) return normalizeUser(user);
+  } catch {
+    /* 退到下一步 */
+  }
+
+  // 3) 兜底：打开"我的主页"，从站点自己发的请求里挖出我的 sec_uid，再正式查资料
+  const secUid = await discoverSelfSecUid();
+  if (!secUid) throw new Error(`拿不到自己的资料（uid=${uid}，也没等到主页请求）`);
+  const profile = await apiGet(EP.userProfile, P.userProfile(secUid), { label: 'selfProfile' });
+  if (!profile.user) throw new Error(`拿不到自己的资料（sec_uid=${secUid}）`);
+  return normalizeUser(profile.user);
+}
+
+/** 打开 /user/self，从站点自己的请求 URL 里挖出当前账号的 sec_uid（最稳的一条路） */
+export async function discoverSelfSecUid({ timeout = 20_000 } = {}) {
+  const ctx = await getContext();
+  const page = await ctx.newPage();
+  let secUid = null;
+  const onReq = (req) => {
+    if (secUid) return;
+    const m = req.url().match(/sec_user_id=(MS4wLjABAAAA[\w-]+)/);
+    if (m) secUid = m[1];
+  };
+  ctx.on('request', onReq);
+  try {
+    await page.goto('https://www.douyin.com/user/self', { waitUntil: 'domcontentloaded', timeout: 45_000 }).catch(() => {});
+    const deadline = Date.now() + timeout;
+    while (Date.now() < deadline && !secUid) await sleep(500);
+    return secUid;
+  } finally {
+    ctx.off('request', onReq);
+    await page.close().catch(() => {});
+  }
 }
 
 /**
