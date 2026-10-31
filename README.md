@@ -1,5 +1,7 @@
 # 抖音运营 MCP（douyin-ops-mcp）
 
+仓库：<https://github.com/kungful/douyin-ops-mcp> · 配套 Pi 技能：`~/.pi/agent/skills/douyin-ops`
+
 一个给 agent 用的抖音运营工具：**采集解析 → 爆款拆解 → 内容排期 → 自动发布 → 数据复盘**，全链路。
 
 融合了四个上游项目各自的长处，但代码是重写的（因为它们的核心部分在国内网络下都跑不通或已经过时）：
