@@ -1,0 +1,55 @@
+douyin-ops-mcp
+Copyright (c) 2026 kungful
+Licensed under the MIT License (see LICENSE). Use is additionally bounded by DISCLAIMER.md.
+
+This project is NOT affiliated with, authorized by, or endorsed by Douyin / ByteDance.
+
+--------------------------------------------------------------------------------
+Third-party software
+--------------------------------------------------------------------------------
+
+playwright-core
+  Copyright Microsoft Corporation
+  Apache License 2.0 — https://github.com/microsoft/playwright
+  Used as the browser automation engine (drives the user's own Chrome).
+
+Node.js built-in modules (node:fs, node:path, node:child_process, ...)
+  Node.js is licensed under the MIT license.
+
+fastapi / faster-whisper / ffmpeg (optional, invoked but not bundled)
+  faster-whisper: MIT — https://github.com/SYSTRAN/faster-whisper
+  FFmpeg: LGPL/GPL depending on build — https://ffmpeg.org/legal.html
+  faster-whisper CT2 models are downloaded on demand from ModelScope by the user.
+
+--------------------------------------------------------------------------------
+Knowledge sources (no source code copied; endpoint parameter names, response
+field semantics and product decisions were informed by these Apache-2.0 projects)
+--------------------------------------------------------------------------------
+
+Evil0ctal / Douyin_TikTok_Download_API
+  Apache License 2.0 — https://github.com/Evil0ctal/Douyin_TikTok_Download_API
+  Informed: Douyin web endpoint table, per-endpoint query parameter sets,
+  bit_rate stream selection strategy, status_code semantics, MCP tool-surface
+  design principle ("few, pickable tools").
+
+yzfly / douyin-mcp-server
+  Apache License 2.0 — https://github.com/yzfly/douyin-mcp-server
+  Informed: share-link → video → audio → ASR pipeline shape (three-tier ASR
+  fallback implemented here independently).
+
+anYuJia / better-douyin
+  Source-available "open shell" (non-commercial license) — https://github.com/anYuJia/better-douyin
+  Informed (product level only, no code used): batch collection, download
+  dedupe manifest, and content-library information architecture.
+
+xpzouying / xiaohongshu-mcp
+  Apache License 2.0 — https://github.com/xpzouying/xiaohongshu-mcp
+  Informed: MCP tool grouping, persistent-session login pattern, dryRun-before-
+  publish habit.
+
+--------------------------------------------------------------------------------
+Trademarks
+--------------------------------------------------------------------------------
+
+"抖音", "Douyin", "字节跳动", "ByteDance" and related marks are trademarks of their
+respective owners. This project references them descriptively only.

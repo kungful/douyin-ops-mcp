@@ -1,4 +1,11 @@
 #!/usr/bin/env node
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 kungful
+//
+// 使用边界：本程序只能用于运营使用者本人拥有或已获授权的账号，以及发布其拥有权利的内容。
+// 禁止用于刷量、批量养号、规避平台安全机制、大规模抓取或转售数据等用途。
+// 本项目与抖音/字节跳动无任何关联、未获其授权。完整条款见仓库根目录 DISCLAIMER.md。
+//
 // MCP 服务器（stdio）。不依赖 SDK：MCP 的 stdio 传输就是"一行一个 JSON-RPC 2.0 消息"，
 // 手写反而更可控、启动更快、少一个依赖。
 //
@@ -46,8 +53,10 @@ async function handle(msg) {
         capabilities: { tools: { listChanged: false } },
         serverInfo: SERVER_INFO,
         instructions:
-          '抖音运营工具箱。免登录就能用：douyin_parse / douyin_download / douyin_transcribe / douyin_trending / douyin_user_profile / douyin_comments。' +
-          '发布与搜索需要登录：先 douyin_login_qrcode 扫码（登录态持久保存）。发布前请先用 dryRun=true 走预览并看截图。',
+          '抖音运营工具箱（个人自用工具，与抖音官方无关联；仅限运营使用者本人拥有或已获授权的账号与内容，禁止刷量/批量养号/绕过风控/大规模抓取，详见 DISCLAIMER.md）。' +
+          '免登录就能用：douyin_parse / douyin_download / douyin_transcribe / douyin_trending / douyin_user_profile / douyin_comments。' +
+          '发布与搜索需要登录：先 douyin_login_qrcode 扫码（登录态持久保存）。**发布前一律先用 dryRun=true 出预览截图给用户确认**，' +
+          '内容是否合规、是否侵权由使用者负责。',
       });
     }
     case 'notifications/initialized':

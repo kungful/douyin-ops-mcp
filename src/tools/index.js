@@ -324,7 +324,7 @@ const publishTools = [
     name: 'douyin_publish_video',
     title: '发布视频',
     description:
-      '把本地视频发布到抖音（走创作者中心真实上传流程）：标题、正文、话题、自定义封面、定时发布。强烈建议先用 dryRun=true 走一遍：它会一路填到"发布按钮就在眼前"并截图，确认无误再 dryRun=false 真发。需要先 douyin_login_qrcode 登录。',
+      '把本地视频发布到抖音（走创作者中心真实上传流程）：标题、正文、话题、自定义封面、定时发布。强烈建议先用 dryRun=true 走一遍：它会一路填到"发布按钮就在眼前"并截图，确认无误再 dryRun=false 真发。需要先 douyin_login_qrcode 登录。注意：发布内容的合规性（是否原创/是否侵权/是否符合平台规则）由使用者负责，只会发到使用者本人账号。',
     inputSchema: obj({
       file: s('本地视频文件绝对路径（mp4/mov，≥3 秒，建议 9:16）'),
       title: s('作品标题（≤30 字，可留空）'),
@@ -343,7 +343,7 @@ const publishTools = [
     name: 'douyin_publish_images',
     title: '发布图文',
     description:
-      '把一组本地图片发布成抖音图文（最多 35 张）：标题（≤20 字）、正文、话题、可选配乐占位与定时发布。同样建议先 dryRun=true 预览截图。',
+      '把一组本地图片发布成抖音图文（最多 35 张）：标题（≤20 字）、正文、话题、定时发布。同样建议先 dryRun=true 预览截图。图片版权与内容合规由使用者负责。',
     inputSchema: obj({
       files: arr('本地图片绝对路径数组（jpg/png/webp，按顺序展示）'),
       title: s('标题（≤20 字）'),
@@ -426,7 +426,7 @@ const interactTools = [
     name: 'douyin_comment_publish',
     title: '发评论 / 回复评论',
     description:
-      '在作品下发一条新评论，或者回复某条已有评论（给 commentId 就是回复）。这是真实对外发言，注意语气与频率；一次别连发多条（容易被限流）。',
+      '在作品下发一条新评论，或者回复某条已有评论（给 commentId 就是回复）。这是真实对外发言（以使用者账号身份发出），注意语气与频率；一次别连发多条（容易被限流）。不要用于刷评论/导流。',
     inputSchema: obj({
       awemeId: s('作品 ID'),
       text: s('评论内容'),

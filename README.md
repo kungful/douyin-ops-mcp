@@ -1,5 +1,15 @@
 # 抖音运营 MCP（douyin-ops-mcp）
 
+> ### ⚠️ 使用前必读
+> 本项目是**跑在你自己电脑上的个人工具**，与抖音/字节跳动**无任何关联、未获授权**。
+> 它通过驱动你本机 Chrome 完成操作，**等同于你本人操作**，因此：
+> - 只能用于运营**你本人拥有或已获授权**的账号，发布**你拥有权利**的内容；
+> - **禁止**用于刷量、批量养号、规避平台安全机制、大规模抓取或转售数据、以及任何违法违规用途；
+> - 自动化操作可能违反平台协议，存在**限流、封号**风险；发布前请务必 `dryRun: true` 自行审核；
+> - 登录 cookie 存在本机 `data/`（已 gitignore），请自行保管。
+>
+> 完整条款见 **[DISCLAIMER.md](DISCLAIMER.md)**（这不是法律意见，商业用途请咨询律师）。
+
 仓库：<https://github.com/kungful/douyin-ops-mcp> · 配套 Pi 技能：`~/.pi/agent/skills/douyin-ops`
 
 一个给 agent 用的抖音运营工具：**采集解析 → 爆款拆解 → 内容排期 → 自动发布 → 数据复盘**，全链路。
@@ -207,7 +217,13 @@ scripts/                 smoke / protocol-test / login / queue-daemon
 - 只支持抖音（中国区），不含 TikTok。
 - 不做刷量、不做多账号矩阵（同一 profile 只能登一个号；多号就复制一份 data 目录并改 `DOUYIN_DATA`）。
 
-## 许可与致谢
+## 许可
+
+- 代码许可：**MIT**（见 [LICENSE](LICENSE)）
+- 使用边界与免责：**[DISCLAIMER.md](DISCLAIMER.md)** —— 请在使用前读一遍
+- 第三方组件与知识来源的完整清单：**[NOTICE](NOTICE)**
+
+## 致谢
 
 本项目代码为自研。接口参数/数据结构的知识来源见上表（上游均为 Apache-2.0，只借鉴了参数名、
 数据字段和工程判断，没有拷贝其代码）。`a_bogus` 的成因分析出自上游 `docs/design/17-signature-reversing.md` —
