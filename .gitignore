@@ -1,0 +1,7 @@
+# 运行时数据（含登录态 cookie，绝对不能进仓库）
+data/
+node_modules/
+_upstream/
+_probe/
+*.log
+*.part

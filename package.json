@@ -1,0 +1,22 @@
+{
+  "name": "douyin-ops-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "抖音运营 MCP：分享链接解析 / 无水印下载 / 文案提取(ASR) / 热榜选题 / 浏览器自动化发布(视频·图文·定时) / 作品数据 / 评论互动",
+  "bin": {
+    "douyin-ops-mcp": "src/server.js"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "smoke": "node scripts/smoke.js",
+    "queue": "node scripts/queue-daemon.js",
+    "login": "node scripts/login.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "playwright-core": "^1.58.2"
+  }
+}
