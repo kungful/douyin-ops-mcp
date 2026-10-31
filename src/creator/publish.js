@@ -97,9 +97,15 @@ export async function publish(opts) {
     await page.goto(URLs.creatorUpload, { waitUntil: 'domcontentloaded', timeout: CONFIG.NAV_TIMEOUT });
     note('打开上传页', true, page.url());
 
-    // 2. 选中文件（等 React 挂载出上传控件）
+    // 2. 图文要先点"发布图文"切模式（上传页默认是视频入口，input 只收 video/* 且不接受多选）
+    if (kind === 'images') {
+      const switched = await enterPublishMode(page, '图文');
+      note('切换到图文模式', switched, switched ? '' : '没找到「发布图文」入口，继续按默认流程试');
+    }
+
+    // 3. 选中文件（等 React 挂载出上传控件）
     const acceptHint = kind === 'video' ? 'video' : 'image';
-    const via = await uploadFiles(page, files, acceptHint);
+    const via = await uploadFiles(page, files, acceptHint, files.length > 1);
     if (!via) {
       const file = await shot(page, 'publish-noinput');
       note('找到上传控件', false, `60 秒内没等到 input[type=file]（${kind}）`);
@@ -107,12 +113,12 @@ export async function publish(opts) {
     }
     note('选择文件', true, `${files.map((f) => path.basename(f)).join(', ')}（经 ${via}）`);
 
-    // 3. 等进入发布编辑页
+    // 4. 等进入发布编辑页
     const entered = await waitFor(() => PUBLISH_URL_RE.test(page.url()), { timeout: 60_000, poll: 700 });
     note('进入发布编辑页', entered, page.url());
     await sleep(2500);
 
-    // 4. 等平台认为媒体就绪（发布按钮可用 + 预览视频有元数据）
+    // 5. 等平台认为媒体就绪（发布按钮可用 + 预览视频有元数据）
     const uploaded = await waitForMediaReady(page, { timeout: kind === 'video' ? 20 * 60_000 : 5 * 60_000 });
     note('媒体就绪', uploaded, uploaded ? '' : '超时：文件可能太大或网络慢');
     if (!uploaded) {
@@ -120,37 +126,39 @@ export async function publish(opts) {
       return { ok: false, stage: 'uploading', screenshot: file, steps, text: await pageText(page) };
     }
 
-    // 5. 标题（读回校验）
+    // 6. 定时发布（放最前面：时间选择器的输入框不好定位，万一填错位置，后面的标题/描述会覆盖回来）
+    if (scheduleAt) {
+      const ok = await setSchedule(page, scheduleAt);
+      note('设置定时发布', ok, ok ? scheduleAt : '没找到定时发布控件（时间输入框没识别出来）');
+    }
+
+    // 7. 标题（读回校验）
     if (title) {
       const hit = await typeTitle(page, title, kind);
       note('填写标题', Boolean(hit), hit ? `命中 ${hit}` : '标题没写进去（找不到输入框或读回为空）');
     }
 
-    // 6. 描述（鼠标点进编辑器 + insertText，读回校验）
+    // 8. 描述（鼠标点进编辑器 + insertText，读回校验）
     if (desc) {
       const hit = await typeDescription(page, desc);
       note('填写作品描述', Boolean(hit), hit ? `命中 ${hit}` : '描述没写进去（编辑器没聚焦）');
     }
 
-    // 7. 话题（走页面自带的「#添加话题」，读回校验）
+    // 9. 话题（走页面自带的「#添加话题」，读回校验）
     if (topics.length) {
       const { added, verified } = await addTopics(page, topics);
       note('添加话题', verified >= topics.length, `${verified}/${topics.length}（点了 ${added} 次入口）`);
     }
 
-    // 8. 封面（可选，失败不致命）
+    // 10. 封面（可选，失败不致命，但必须确认弹窗关掉）
     if (coverFile && fs.existsSync(coverFile)) {
       const ok = await setCover(page, coverFile);
-      note('设置封面', ok, ok ? path.basename(coverFile) : '自定义封面流程没走通（不致命，用平台自动封面）');
+      note('设置封面', ok, ok ? path.basename(coverFile) : '自定义封面没生效（平台封面弹窗要人工裁切/确认），已自动关掉弹窗，用平台自动封面');
     }
+    const dialogLeft = await closeDialogs(page);
+    if (dialogLeft) note('关闭遗留弹窗', false, '还有弹窗没关掉，可能影响点发布');
 
-    // 9. 定时发布
-    if (scheduleAt) {
-      const ok = await setSchedule(page, scheduleAt);
-      note('设置定时发布', ok, ok ? scheduleAt : '没找到定时发布控件');
-    }
-
-    // 10. 预览模式
+    // 11. 预览模式
     if (dryRun || keepOpen) {
       const file = await shot(page, 'publish-preview');
       note('停在预览页（未点发布）', true, file || '');
@@ -168,7 +176,7 @@ export async function publish(opts) {
       };
     }
 
-    // 11. 点发布
+    // 12. 点发布
     const clicked = await clickPublish(page);
     note('点击发布', Boolean(clicked), clicked ? `按钮文案「${clicked}」` : '没找到发布按钮');
     if (!clicked) {
@@ -176,7 +184,7 @@ export async function publish(opts) {
       return { ok: false, stage: 'submit', screenshot: file, steps, text: await pageText(page) };
     }
 
-    // 12. 等真正的结果：抖音先提交、再后台上传，进度条没走完不能收工
+    // 13. 等真正的结果：抖音先提交、再后台上传，进度条没走完不能收工
     const result = await waitUploadAndPublish(page, { timeout: 12 * 60_000 });
     note('发布结果', result.ok, result.detail);
     const file = await shot(page, 'publish-result');
@@ -200,19 +208,29 @@ export async function publish(opts) {
 /**
  * 把文件交给上传控件。创作者中心是 React 应用，input 要等页面挂载完才出现（约 10s）。
  */
-async function uploadFiles(page, files, acceptHint) {
+async function uploadFiles(page, files, acceptHint, needMultiple = false) {
   const sel = 'input[type="file"]';
   const appeared = await page.waitForSelector(sel, { state: 'attached', timeout: 60_000 }).catch(() => null);
   if (appeared) {
     const inputs = page.locator(sel);
     const total = await inputs.count();
+    let fallback = null;
     for (let i = 0; i < total; i++) {
       const el = inputs.nth(i);
       const accept = (await el.getAttribute('accept')) || '';
-      if (accept.includes(acceptHint)) {
-        await el.setInputFiles(files);
-        return 'input[accept]';
+      const multiple = (await el.getAttribute('multiple')) != null;
+      if (!accept.includes(acceptHint)) continue;
+      if (needMultiple && !multiple) {
+        fallback = fallback || el;
+        continue;
       }
+      await el.setInputFiles(files);
+      return multiple ? 'input[accept,multiple]' : 'input[accept]';
+    }
+    if (fallback) {
+      throw new Error(
+        `只找到单文件上传框（accept=${acceptHint}），多图需要平台的多选入口。请确认已切到「发布图文」模式。`,
+      );
     }
     await inputs.first().setInputFiles(files);
     return 'input';
@@ -232,6 +250,23 @@ async function uploadFiles(page, files, acceptHint) {
     }
   }
   return null;
+}
+
+/** 上传页顶部的模式入口：发布视频 / 发布图文 / 发布全景视频 / 发布文章 */
+async function enterPublishMode(page, label) {
+  // 等页面挂载完
+  await waitFor(
+    () => page.evaluate(() => /发布视频|发布图文/.test(document.body?.innerText || '')),
+    { timeout: 45_000, poll: 700 },
+  );
+  for (const t of [`发布${label}`, label]) {
+    const loc = page.getByText(t, { exact: true }).first();
+    if (!(await loc.count())) continue;
+    await loc.click({ timeout: 5000 }).catch(() => {});
+    await sleep(1800);
+    return true;
+  }
+  return false;
 }
 
 async function waitFor(fn, { timeout = 20_000, poll = 500 } = {}) {
@@ -374,53 +409,217 @@ async function clickSuggestion(page, tag) {
 
 async function setCover(page, coverFile) {
   try {
-    for (const t of ['选择封面', '设置封面', '编辑封面']) {
-      const loc = page.getByText(t, { exact: false }).first();
-      if (!(await loc.count())) continue;
-      await loc.click({ timeout: 4000 }).catch(() => {});
-      await sleep(1800);
-      const up = page.getByText('上传封面', { exact: false }).first();
-      if (await up.count()) await up.click({ timeout: 3000 }).catch(() => {});
-      await sleep(1200);
-      const inputs = page.locator('input[type="file"]');
-      if (!(await inputs.count())) break;
-      await inputs.last().setInputFiles(coverFile).catch(() => {});
-      await sleep(2500);
-      for (const c of ['完成', '确认', '确定']) {
-        const btn = page.getByText(c, { exact: true }).first();
-        if (await btn.count()) {
-          await btn.click({ timeout: 3000 }).catch(() => {});
-          await sleep(1200);
-          break;
-        }
-      }
+    // 1) 打开封面弹窗
+    const opened = await page.evaluate(() => {
+      const el = [...document.querySelectorAll('*')].find(
+        (e) => e.children.length === 0 && (e.textContent || '').trim() === '选择封面',
+      );
+      if (!el) return false;
+      el.click();
       return true;
+    });
+    if (!opened) return false;
+    await sleep(2500);
+
+    // 2) 点画布中间那颗黑色「上传封面」大按钮（面积最大那个），用 filechooser 接管
+    const box = await page.evaluate(() => {
+      const nodes = [...document.querySelectorAll('*')].filter(
+        (e) => e.children.length === 0 && (e.textContent || '').trim() === '上传封面',
+      );
+      let best = null;
+      for (const n of nodes) {
+        const host = n.closest('button,[class*="btn"],[class*="upload"]') || n;
+        const r = host.getBoundingClientRect();
+        if (!r.width || !r.height) continue;
+        if (!best || r.width * r.height > best.area) best = { x: r.x + r.width / 2, y: r.y + r.height / 2, area: r.width * r.height };
+      }
+      return best;
+    });
+    let uploaded = false;
+    if (box) {
+      try {
+        const [chooser] = await Promise.all([
+          page.waitForEvent('filechooser', { timeout: 8000 }),
+          page.mouse.click(box.x, box.y),
+        ]);
+        await chooser.setFiles(coverFile);
+        uploaded = true;
+      } catch {
+        /* 退到 input */
+      }
     }
+    if (!uploaded) {
+      const inputs = page.locator('input[type="file"]');
+      const total = await inputs.count();
+      for (let i = 0; i < total; i++) {
+        const el = inputs.nth(i);
+        const accept = (await el.getAttribute('accept')) || '';
+        if (!accept.includes('image')) continue;
+        await el.setInputFiles(coverFile).catch(() => {});
+        uploaded = true;
+        break;
+      }
+    }
+    if (!uploaded) {
+      await closeDialogs(page);
+      return false;
+    }
+
+    // 3) 等「完成」变可点（裁切预览处理完才会亮）
+    const doneEnabled = await waitFor(
+      () =>
+        page.evaluate(() => {
+          const el = [...document.querySelectorAll('button,[class*="btn"]')].find(
+            (b) => (b.innerText || '').trim() === '完成',
+          );
+          if (!el) return false;
+          const cls = (el.className || '').toString();
+          const disabled = el.disabled || el.getAttribute('aria-disabled') === 'true' || /disabled/.test(cls);
+          return !disabled && el.getBoundingClientRect().width > 0;
+        }),
+      { timeout: 40_000, poll: 1500 },
+    );
+    if (!doneEnabled) {
+      log.warn('「完成」按钮一直不可用，放弃自定义封面');
+      await closeDialogs(page);
+      return false;
+    }
+
+    // 注意：不要去点「设置竖封面」——它会再开一层竖封面编辑流程，同样要人工裁切，
+    // 点了只会多一层关不掉的弹窗。直接点「完成」，不成再关弹窗放弃自定义封面。
+
+    // 4) 点完成，并确认弹窗关闭（平台要求先裁切/设竖封面时，这里会关不掉）
+    for (let i = 0; i < 3; i++) {
+      const clickedDone = await page.evaluate(() => {
+        const btns = [...document.querySelectorAll('button')].filter(
+          (b) => (b.innerText || '').trim() === '完成' && b.getBoundingClientRect().width > 0,
+        );
+        if (!btns.length) return false;
+        btns[0].click();
+        return true;
+      });
+      log.info(`点「完成」${clickedDone ? '已点' : '没找到按钮'}`);
+      await sleep(1500);
+      if (!(await coverDialogOpen(page))) {
+        log.info('自定义封面已生效');
+        return true;
+      }
+    }
+    // 关不掉的弹窗必须收掉，否则后面点发布会点不到
+    const stillOpen = await closeDialogs(page);
+    log.warn(stillOpen ? '封面弹窗关不掉（会影响后面的发布）' : '封面没设成功，已关掉弹窗继续');
+    return false;
   } catch (err) {
     log.warn('封面设置失败', err.message);
+    await closeDialogs(page);
+    return false;
   }
-  return false;
+}
+
+function coverDialogOpen(page) {
+  // 注意：不能用 "设置横封面" 这种文案判断——弹窗关掉后这些字还留在 DOM 里，会误判成没关。
+  // 弹窗独有的可见元素是「封面检测」按钮 / 裁切画布。
+  return page
+    .evaluate(() => {
+      const visible = (el) => {
+        const r = el.getBoundingClientRect();
+        return r.width > 0 && r.height > 0;
+      };
+      const leaf = [...document.querySelectorAll('*')].filter(
+        (el) => el.children.length === 0 && visible(el),
+      );
+      return leaf.some((el) => ['封面检测', '设置竖封面'].includes((el.textContent || '').trim()));
+    })
+    .catch(() => false);
+}
+
+/** 关掉遗留弹窗：先 Esc，再试 X / 取消 / 关闭。返回 true 表示还有弹窗残留 */
+async function closeDialogs(page) {
+  const has = () => coverDialogOpen(page);
+  if (!(await has())) return false;
+
+  for (let i = 0; i < 3; i++) {
+    // 坐标优先：1440 视口下封面弹窗的 X 在右上角约 (宽-193, 113)
+    const vp = page.viewportSize() || { width: 1440, height: 900 };
+    await page.mouse.click(vp.width - 193, 113).catch(() => {});
+    await sleep(900);
+    if (!(await has())) return false;
+
+    // 再试弹窗内部的 X 图标
+    await page
+      .evaluate(() => {
+        const vw = window.innerWidth;
+        const inModal = (el) => Boolean(el.closest('[class*="modal"],[class*="dialog"],[class*="semi-portal"],[class*="coverControl"]'));
+        const cands = [...document.querySelectorAll('svg')].filter((el) => {
+          const r = el.getBoundingClientRect();
+          return r.width > 6 && r.width < 30 && r.top > 60 && r.top < 240 && r.left > vw * 0.7;
+        });
+        const target = cands.find(inModal) || cands[0];
+        (target?.closest('button,[class*="close"],[role="button"]') || target?.parentElement)?.click();
+      })
+      .catch(() => {});
+    await sleep(900);
+    if (!(await has())) return false;
+  }
+  return await has();
 }
 
 async function setSchedule(page, scheduleAt) {
   try {
-    const radio = page.getByText('定时发布', { exact: false }).first();
-    if (!(await radio.count())) return false;
-    await radio.click({ timeout: 3000 }).catch(() => {});
-    await sleep(1200);
+    // 实测：这是 <label><input type=checkbox checked><span>定时发布</span></label> 的自定义单选，
+    // 用 getByText().click() 会被 span 拦截超时，直接在 label 上 .click() 才行。
+    const clicked = await page.evaluate(() => {
+      const label = [...document.querySelectorAll('label')].find((l) =>
+        (l.innerText || '').includes('定时发布'),
+      );
+      if (!label) return false;
+      label.click();
+      return true;
+    });
+    if (!clicked) return false;
+    await sleep(1500);
+
     const when = scheduleAt.replace(/\//g, '-');
-    const inputs = page.locator('input[placeholder*="时间"], input[placeholder*="日期"], .semi-input[placeholder]');
-    const n = await inputs.count();
-    for (let i = 0; i < n; i++) {
-      const el = inputs.nth(i);
-      if (!(await el.isVisible().catch(() => false))) continue;
-      await el.click({ timeout: 2000 }).catch(() => {});
-      await el.fill('').catch(() => {});
-      await el.type(when, { delay: 30 });
-      await page.keyboard.press('Enter').catch(() => {});
-      await sleep(800);
-      const v = await el.inputValue().catch(() => '');
-      if (v) return true;
+    const DATE_RE = /\d{4}-\d{1,2}-\d{1,2}/;
+    // 只认"时间/日期"语义的输入框，绝不碰标题框
+    const candidates = [
+      'input[placeholder*="时间"]',
+      'input[placeholder*="日期"]',
+      'input[placeholder*="请选择"]',
+      '.semi-datePicker input',
+      'input[type="datetime-local"]',
+    ];
+    for (const sel of candidates) {
+      const list = page.locator(sel);
+      const n = await list.count();
+      for (let i = 0; i < n; i++) {
+        const el = list.nth(i);
+        if (!(await el.isVisible().catch(() => false))) continue;
+        const ph = (await el.getAttribute('placeholder')) || '';
+        if (/标题|描述/.test(ph)) continue; // 宁可放弃也不误填
+        await el.click({ timeout: 3000 }).catch(() => {});
+        await sleep(300);
+        await page.keyboard.press('Control+A').catch(() => {});
+        await el.fill('').catch(() => {});
+        await el.type(when, { delay: 40 });
+        await sleep(900);
+        const v = await el.inputValue().catch(() => '');
+        if (DATE_RE.test(v)) {
+          await page.keyboard.press('Enter').catch(() => {});
+          await sleep(1000);
+          return true;
+        }
+        await page.keyboard.press('Escape').catch(() => {});
+      }
+    }
+    // 有的版本是日历选择器：直接点今天+时间
+    log.warn('没找到日期时间输入框，尝试确认已有默认时间');
+    for (const t of ['确定', '确认']) {
+      const btn = page.getByText(t, { exact: true }).first();
+      if (await btn.count()) {
+        await btn.click({ timeout: 2500 }).catch(() => {});
+        return true;
+      }
     }
   } catch (err) {
     log.warn('定时设置失败', err.message);

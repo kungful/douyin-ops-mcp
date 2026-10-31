@@ -90,9 +90,10 @@ const readTools = [
         nextCursor = page.cursor;
         hasMore = page.hasMore;
       } else if (source === 'search') {
-        items.push(...(await searchVideos(target, { count: Math.min(limit, 20), offset: Number(cursor) || 0 })));
+        const res = await searchVideos(target, { count: Math.min(limit, 20), offset: Number(cursor) || 0 });
+        items.push(...res.items);
         nextCursor = String((Number(cursor) || 0) + Math.min(limit, 20));
-        hasMore = true;
+        hasMore = res.hasMore;
       } else {
         const page = await fetchHotSpotVideos({ count: Math.min(limit, 20), cursor });
         items.push(...page.items);
@@ -149,7 +150,14 @@ const readTools = [
     }, ['keyword']),
     handler: async ({ keyword, type = 'video', count = 10, offset = 0, sort = '0' }) => {
       if (type === 'user') return { keyword, users: await searchUsers(keyword, { count, offset }) };
-      return { keyword, videos: await searchVideos(keyword, { count, offset, sort }) };
+      const res = await searchVideos(keyword, { count, offset, sort });
+      return {
+        keyword,
+        videos: res.items,
+        relatedKeywords: res.relatedKeywords,
+        hasMore: res.hasMore,
+        note: 'relatedKeywords 是抖音给的搜索联想词，通常比原始关键词更贴近流量池',
+      };
     },
   },
   {
@@ -438,17 +446,21 @@ const interactTools = [
   },
   {
     name: 'douyin_notifications',
-    title: '通知列表',
-    description: '读通知：谁评论了你、谁点了赞、谁新关注了你。用来及时互动（运营最有效的动作之一）。',
-    inputSchema: obj({ limit: n('条数（默认 20）', { default: 20 }) }),
-    handler: async ({ limit = 20 }) => notifications({ limit }),
+    title: '待回复评论（我的作品）',
+    description:
+      '把我最近几条作品下的评论抓出来，标出哪些是别人发的、我还没回复的（按时间倒序）。抖音 Web 端没有可用的通知中心页面（/notice、/messages 都是 404），所以这里用"评论待回复"来替代通知——对运营来说这本来也是更该先处理的那部分。',
+    inputSchema: obj({
+      limit: n('最多返回多少条（默认 20）', { default: 20 }),
+      works: n('扫最近几条作品（默认 5，越多越慢）', { default: 5 }),
+    }),
+    handler: async ({ limit = 20, works = 5 }) => notifications({ limit, works }),
   },
   {
     name: 'douyin_unread_count',
-    title: '未读通知数',
-    description: '各分区未读数：评论和@、赞和收藏、新增关注。',
-    inputSchema: obj({}),
-    handler: async () => unreadCount(),
+    title: '待回复评论数',
+    description: '待回复评论的条数（按作品分组）。这是"该去回评论了"的信号，用评论接口算出来的真实数字。',
+    inputSchema: obj({ works: n('扫最近几条作品（默认 5）', { default: 5 }) }),
+    handler: async ({ works = 5 }) => unreadCount({ works }),
   },
 ];
 

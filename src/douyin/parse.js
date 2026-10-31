@@ -155,23 +155,36 @@ export async function fetchComments(awemeId, { count = 20, cursor = '0' } = {}) 
 export async function searchVideos(keyword, { count = 10, offset = 0, sort = '0' } = {}) {
   const payload = await apiGet(EP.searchVideo, P.searchVideo(keyword, { count, offset: String(offset), sort_type: sort }), {
     label: 'search',
+    timeout: 90_000, // 搜索接口偶尔很慢（要走检索链路），给足时间
+    retries: 2,
   });
-  const list = payload.data || [];
-  return list
+  const list = payload.data || payload.aweme_list || [];
+  const items = list
     .map((d) => {
-      const a = d.aweme_info || d.aweme_mix_info?.aweme_list?.[0];
+      const a = d?.aweme_info || d?.aweme_mix_info?.aweme_list?.[0] || (d?.aweme_id ? d : null);
       return a ? normalizeAweme(a) : null;
     })
     .filter(Boolean);
+  return {
+    items,
+    relatedKeywords: (payload.guide_search_words || []).map((w) => w.word).filter(Boolean),
+    hasMore: Boolean(payload.has_more),
+    cursor: String(payload.cursor ?? '0'),
+  };
 }
 
 /** 关键词搜索用户（需要登录） */
 export async function searchUsers(keyword, { count = 10, offset = 0 } = {}) {
-  const payload = await apiGet(EP.searchUser, P.searchUser(keyword, { count, offset: String(offset) }), { label: 'searchUser' });
+  const payload = await apiGet(EP.searchUser, P.searchUser(keyword, { count, offset: String(offset) }), {
+    label: 'searchUser',
+    timeout: 90_000,
+    retries: 2,
+  });
   const list = payload.user_list || payload.data || [];
+  // 实测：每一项是 { user_info: {...完整 user...} }，不是 { user_info: { user } }
   return list
-    .map((d) => d.user_info?.user || d.user)
-    .filter(Boolean)
+    .map((d) => d.user_info || d.user || d)
+    .filter((u) => u && u.sec_uid)
     .map((u) => normalizeUser(u));
 }
 

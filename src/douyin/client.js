@@ -50,10 +50,30 @@ const HINTS = {
  * @param {Record<string,string>} params
  * @returns {Promise<any>} 解析后的 JSON
  */
-export async function apiGet(path, params, { page, allowCodes = [], label = '' } = {}) {
+export async function apiGet(path, params, { page, allowCodes = [], label = '', timeout, retries = 1 } = {}) {
   const qs = new URLSearchParams(params).toString();
   const url = `https://www.douyin.com${path}?${qs}`;
-  return callInPage(path, url, { page, allowCodes, label, method: 'GET' });
+  return withRetry(
+    () => callInPage(path, url, { page, allowCodes, label, method: 'GET', timeout }),
+    { retries, label: label || path },
+  );
+}
+
+/** 抖音偶尔会把某个请求拖到超时（风控抽样），换一次页面重试通常就好 */
+async function withRetry(fn, { retries = 1, label = 'api' } = {}) {
+  let lastErr;
+  for (let i = 0; i <= retries; i++) {
+    try {
+      return await fn(i);
+    } catch (err) {
+      lastErr = err;
+      const retryable = /abort|timeout|超时|signal is aborted|net::ERR/i.test(String(err?.message || ''));
+      if (!retryable || i === retries) break;
+      log.warn(`${label} 超时/中断，重试第 ${i + 1} 次`);
+      await new Promise((r) => setTimeout(r, 1200));
+    }
+  }
+  throw lastErr;
 }
 
 /**
@@ -65,7 +85,7 @@ export async function apiPost(path, params, body, { page, allowCodes = [], label
   return callInPage(path, url, { page, allowCodes, label, method: 'POST', body });
 }
 
-async function callInPage(path, url, { page: givenPage, allowCodes = [], label = '', method = 'GET', body } = {}) {
+async function callInPage(path, url, { page: givenPage, allowCodes = [], label = '', method = 'GET', body, timeout } = {}) {
   return serialize(async () => {
     const page = givenPage || (await getApiPage());
     const started = Date.now();
@@ -90,11 +110,13 @@ async function callInPage(path, url, { page: givenPage, allowCodes = [], label =
           clearTimeout(timer);
         }
       },
-      { u: url, method, body: body ?? null, timeout: CONFIG.API_TIMEOUT },
+      { u: url, method, body: body ?? null, timeout: timeout || CONFIG.API_TIMEOUT },
     );
 
     if (raw.status === 0) {
-      throw new Error(`抖音接口请求失败（${path}）：${raw.error || '网络错误'}`);
+      const err = new Error(`抖音接口请求失败（${path}）：${raw.error || '网络错误'}`);
+      err.retryable = /abort|timeout/i.test(String(raw.error));
+      throw err;
     }
     if (raw.status === 403 || raw.status === 401) {
       const file = await shot(page, 'api-403');
